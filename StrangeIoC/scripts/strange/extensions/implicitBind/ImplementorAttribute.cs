@@ -18,6 +18,66 @@ using System;
 using strange.extensions.injector.api;
 
 /// <summary>
+/// Declares a Command class implicity fired by a signal
+/// </summary>
+/// TODO should support pooling
+[AttributeUsage(AttributeTargets.Class, AllowMultiple = true)]
+public class Fires : Attribute
+{
+    /// <summary>
+	/// Concretely bind to own type
+	/// </summary>
+	public Fires() {  }
+
+    /// <summary>
+    /// Bind to a signal.
+    /// </summary>
+    /// <param name="t">Command to bind to</param>
+    /// <param name="fireOnce">if command should only fire once</param>
+    /// <param name="pool">if command should be pooled</param>
+    /// <param name="makeSignalCrossContext">if signal should be marked as cross context</param>
+    public Fires(Type t, bool fireOnce = false, bool pool = false, bool makeSignalCrossContext = false)
+    {
+        CommandType = t;
+        FireOnce = fireOnce;
+        Pool = pool;
+        MakeSignalCrossContext = makeSignalCrossContext;
+    }
+
+    public Type CommandType { get; set; }
+    public bool FireOnce { get; set; }
+    public bool MakeSignalCrossContext { get; set; }
+    public bool Pool { get; set; }
+}
+
+/// <summary>
+/// Declares a Command class implicity fired by one signal
+/// </summary>
+/// TODO should support pooling, firing once, cross context
+[AttributeUsage(AttributeTargets.Class)]
+public class FiredBy : Attribute
+{
+    /// <summary>
+	/// Concretely bind to own type
+	/// </summary>
+	public FiredBy() {  }
+
+    /// <summary>
+    /// Bind to a signal.
+    /// </summary>
+    /// <param name="t">Signal to bind to</param>
+    /// <param name="fireOnce">if command should only fire once</param>
+    public FiredBy(Type t, bool fireOnce = false)
+    {
+        SignalType = t;
+        FireOnce = fireOnce;
+    }
+
+    public Type SignalType { get; set; }
+    public bool FireOnce { get; set; }
+}
+
+/// <summary>
 /// Declares a Class to be implicitly bound.
 /// No arguments binds a concrete class to itself
 /// Passing an Interface binds to that interface

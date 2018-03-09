@@ -18,6 +18,8 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using strange.extensions.command.api;
+using strange.extensions.command.impl;
 using strange.extensions.implicitBind.api;
 using strange.extensions.injector.api;
 using strange.extensions.injector.impl;
@@ -28,6 +30,8 @@ namespace strange.extensions.implicitBind.impl
 {
 	public class ImplicitBinder : IImplicitBinder
 	{
+        [Inject]
+        public ICommandBinder commandBinder { get; set; }
 
 		[Inject]
 		public IInjectionBinder injectionBinder { get; set; }
@@ -37,13 +41,13 @@ namespace strange.extensions.implicitBind.impl
 
 
 		//Hold a copy of the assembly so we aren't retrieving this multiple times. 
-		private Assembly assembly;
+		public Assembly Assembly { get; set; }
 
 
 		[PostConstruct]
 		public void PostConstruct()
 		{
-			assembly = Assembly.GetExecutingAssembly();
+			Assembly = Assembly.GetExecutingAssembly();
 		}
 
 		/// <summary>
@@ -52,12 +56,12 @@ namespace strange.extensions.implicitBind.impl
 		/// </summary>
 		/// <param name="usingNamespaces">Array of namespaces. Compared using StartsWith. </param>
 
-		public virtual void ScanForAnnotatedClasses(string[] usingNamespaces)
+		public virtual void ScanForAnnotatedClasses(params string[] usingNamespaces)
 		{
-			if (assembly != null)
+			if (Assembly != null)
 			{
 
-				IEnumerable<Type> types = assembly.GetExportedTypes();
+				IEnumerable<Type> types = Assembly.GetExportedTypes();
 
 				List<Type> typesInNamespaces = new List<Type>();
 				int namespacesLength = usingNamespaces.Length;
@@ -70,8 +74,10 @@ namespace strange.extensions.implicitBind.impl
 				List<ImplicitBindingVO> implementedByBindings = new List<ImplicitBindingVO>();
 
 				foreach (Type type in typesInNamespaces)
-				{
-					object[] implements = type.GetCustomAttributes(typeof (Implements), true);
+			    {
+			        object[] fires = type.GetCustomAttributes(typeof(Fires), true);
+			        object[] firedBy = type.GetCustomAttributes(typeof(FiredBy), true);
+			        object[] implements = type.GetCustomAttributes(typeof(Implements), true);
 					object[] implementedBy = type.GetCustomAttributes(typeof(ImplementedBy), true);
 					object[] mediated = type.GetCustomAttributes(typeof(MediatedBy), true);
 					object[] mediates = type.GetCustomAttributes(typeof(Mediates), true);
@@ -121,8 +127,12 @@ namespace strange.extensions.implicitBind.impl
 							}
 							else //Concrete
 							{
+								if (impl.Name is Type)
+									Console.WriteLine("You have bound a type: " + type.Name + " as the name of this implements binding. Did you mean to use the (Type, InjectionBindingScope) signature instead of the (InjectionBindingScope, object) signature?");
+
 								bindTypes.Add(type);
 							}
+
 							isCrossContext = isCrossContext || impl.Scope == InjectionBindingScope.CROSS_CONTEXT;
 							name = name ?? impl.Name;
 						}
@@ -161,7 +171,53 @@ namespace strange.extensions.implicitBind.impl
 
 					if (mediationBinder != null && viewType != null && mediatorType != null) //Bind this mediator!
 						mediationBinder.Bind(viewType).To(mediatorType);
+			        
+			        #endregion
 
+			        #region Commands
+			        if (firedBy.Length > 0)
+			        {
+			            var commandType = type;
+			            var first = (FiredBy) firedBy.First();
+			            var signalType = first.SignalType;
+			            bool fireOnce = first.FireOnce;
+
+			            if (signalType == null)
+			                throw new CommandException("Cannot implicitly bind command of type: " + type.Name + " due to null SignalType",
+			                    CommandExceptionType.NULL_BINDING);
+
+                        // bind this command
+                        var binding = commandBinder.Bind(signalType).To(commandType);
+                        if (fireOnce)
+                        {
+                            binding.Once();
+                        }
+			        }
+                    else if (fires.Length > 0)
+			        {
+                        var signalType = type;
+                        var first = (Fires)fires.First();
+                        var commandType = first.CommandType;
+
+                        if (commandType == null)
+                            throw new CommandException("Cannot implicitly bind signal of type: " + type.Name + " due to null CommandType",
+                                CommandExceptionType.NULL_BINDING);
+
+                        // bind this command
+                        var binding = commandBinder.Bind(signalType).To(commandType);
+			            if (first.FireOnce)
+                        {
+                            binding.Once();
+                        }
+			            if (first.Pool)
+			            {
+			                binding.Pooled();
+			            }
+			            if (first.MakeSignalCrossContext)
+			            {
+			                injectionBinder.GetBinding(signalType).CrossContext();
+			            }
+			        }
 					#endregion
 				}
 
@@ -182,7 +238,7 @@ namespace strange.extensions.implicitBind.impl
 			//Therefore, ImplementedBy will be overriden by an Implements to that interface.
 
 			IInjectionBinding binding = injectionBinder.Bind(toBind.BindTypes.First());
-			binding.Weak();//SDM2014-0120: added as part of cross-context implicit binding fix (moved from below)
+			binding.Weak();
 
 			for (int i = 1; i < toBind.BindTypes.Count; i++)
 			{
@@ -197,7 +253,6 @@ namespace strange.extensions.implicitBind.impl
 			if (toBind.IsCrossContext) //Bind this to the cross context injector
 				binding.CrossContext();
 
-			//binding.Weak();//SDM2014-0120: removed as part of cross-context implicit binding fix (moved up higher)
 		}
 
 		private sealed class ImplicitBindingVO
